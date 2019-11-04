@@ -1,0 +1,7 @@
+# PyCharm
+.idea/
+
+# setup.py builds
+build/
+dist/
+py3status_random_wallpaper.egg-info/
