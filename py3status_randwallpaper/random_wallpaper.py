@@ -25,7 +25,7 @@ Configuration parameters:
         will be used. (default None)
     format_string: content that will be printed on the i3bar.
         (default 'Wallpaper {current_basename}')
-    ignore_files: List of filename to ignore when searching for wallpapers.
+    ignored_patterns: List of patterns to ignore when searching for wallpapers.
         (default [])
     recursive_search: Set to True to search for images in subdirectories.
         (default False)
@@ -55,96 +55,47 @@ License: Apache License 2.0 <https://www.apache.org/licenses/LICENSE-2.0.html>
 
 
 import os
+from fnmatch import fnmatch
 from random import randint
 
 
-class Py3status:
+def detect_number_of_screens():
+    cmd = ['xrandr', '--query']
 
-    # Public attributes (i.e. config parameters)
-    button_next = 1
-    button_prev = 3
-    button_rand = 2
-    cache_list = False
-    command = 'feh --bg-scale {}'
-    filter_extensions = [
-        'jpg',
-        'png'
-    ]
-    first_image_path = None
-    format_string = 'Wallpaper {basename}'
-    ignore_files = []
-    recursive_search = False
-    search_dirs = [
-        '~/Pictures/'
-    ]
 
-    def __init__(self):
-        self._current_index = None
-        self._current_name = None
-        self._wallpapers = None
-        self._error = None
+class WallpapersFinder:
+    """Helper class to find wallpapers."""
 
-    def show(self):
-        """
-        Main method, returns the module content to py3status.
+    def __init__(self,
+                 search_dirs,
+                 recursive_search,
+                 filter_extensions,
+                 ignored_patterns):
+        self._search_dirs = search_dirs
+        self._recursive_search = recursive_search
+        self._filter_extensions = filter_extensions
+        self._ignored_patterns = ignored_patterns
+        self.wallpapers = []
 
-        This is the method that will be called by py3status to compute the
-        output and show it on the i3bar.
-        """
-        if self._error:
-            data = {'error_code': self._error.error_code}
-            format_string = 'Error! (code: {error_code})'
-            full_text = self.py3.safe_format(format_string, data)
-        else:
-            data = {'full_name': self._current_name,
-                    'basename': os.path.basename(self._current_name)}
-            full_text = self.py3.safe_format(self.format_string, data)
-        return {
-            'full_text': full_text,
-            'cached_until': self.py3.CACHE_FOREVER
-        }
+    def previous(self, index):
+        if len(self.wallpapers) == 0:
+            return None
+        return (index - 1) % len(self.wallpapers)
 
-    def on_click(self, event):
-        """
-        Callback function, called when a click event is received.
-        """
-        # {'y': 13,'x': 1737, 'button': 1, 'name':'example','instance':'first'}
-        if not self.cache_list:
-            self._wallpapers = self._find_wallpapers()
-        index = self._current_index
-        if event['button'] == self.button_next:
-            index = (index + 1) % len(self._wallpapers)
-        elif event['button'] == self.button_prev:
-            index = (index - 1) % len(self._wallpapers)
-        elif event['button'] == self.button_rand:
-            index = randint(0, len(self._wallpapers) - 1)
-        if index != self._current_index:
-            self._current_index = index
-            self._set_wallpaper(self._wallpapers[self._current_index])
+    def next(self, index):
+        if len(self.wallpapers) == 0:
+            return None
+        return (index + 1) % len(self.wallpapers)
 
-    def post_config_hook(self):
-        """
-        Initialization method (after config parameters have been set).
-        """
-        self._wallpapers = self._find_wallpapers()
-        if self.first_image_path is None:
-            # get random index
-            self._current_index = randint(0, len(self._wallpapers) - 1)
-        else:
-            # get index of given path
-            try:
-                self._current_index = \
-                    self._wallpapers.index(self.first_image_path)
-            except ValueError:
-                msg = 'Tried to force first image but path %s was not found ' \
-                      'in the list of wallpapers' % self.first_image_path
-                self.py3.log(msg, self.py3.LOG_WARNING)
-                self._current_index = 0
-        self._set_wallpaper(self._wallpapers[self._current_index])
+    def random(self, index=None):
+        if len(self.wallpapers) == 0:
+            return None
+        new_index = index
+        while new_index == index:
+            new_index = randint(0, len(self.wallpapers) - 1)
+        return new_index
 
-    # Private Methods
-
-    def _find_wallpapers(self):
+    def search(self):
         """
         Search in all the configured directories and find the wallpapers.
 
@@ -152,33 +103,30 @@ class Py3status:
         :rtype: list
         """
         wallpapers = []
-        for dir_path in self.search_dirs:
-            in_dirs = self._find_wallpapers_in_dir(dir_path)
-            wallpapers.extend(in_dirs)
+        for dir_path in self._search_dirs:
+            for wallpaper in self._search_in_dir(dir_path):
+                wallpapers.append(wallpaper)
+        self.wallpapers = wallpapers
         return wallpapers
 
-    def _find_wallpapers_in_dir(self, dir_path):
+    def _search_in_dir(self, dir_path):
         """
-        Search only in the specified directory and find the wallpapers.
+        Search only in the specified directory and yield the wallpapers.
 
         :param dir_path: The path to the requested directory. This path
             will be expanded (so `~` is authorized).
         :type dir_path: str
-
-        :return: The list of paths to the found wallpapers.
-        :rtype: list
         """
-        wallpapers = []
         dir_path = os.path.expanduser(dir_path)
         for root, dirs, files in os.walk(dir_path, topdown=True):
-            if not self.recursive_search:
+            if not self._recursive_search:
                 # delete the list of dirs, cancelling the recursion
                 del dirs[:]
             # For each file, add it to wallpapers if it meets the conditions
-            wallpapers.extend(
-                [os.path.join(root, x) for x in files
-                 if self._should_add_file(x)])
-        return wallpapers
+            for file in files:
+                abs_path = os.path.join(root, file)
+                if self._should_add_file(abs_path):
+                    yield abs_path
 
     def _should_add_file(self, filename):
         """
@@ -186,9 +134,9 @@ class Py3status:
 
         The conditions are:
             - the extension must be correct (according to the configuration)
-            - the file should not be in the ignore list
+            - the file does not match an ignore pattern
 
-        :param filename: The name of the file (not the full path)
+        :param filename: The name of the file
         :type filename: str
 
         :return: `True` if the file meets all the conditions.
@@ -207,13 +155,13 @@ class Py3status:
         :return: `True` if `self.filter_extensions == None` or if it contains
             the extension of the given filename (e.g. jpg, png, etc.).
         """
-        if self.filter_extensions is None:
+        if self._filter_extensions is None:
             return True
-        # splitext('/file.ext') returns ('/file', '.ext')
+        # splitext('/file.2.ext') returns ('/file.2', '.ext')
         # Thus [1] returns the 2nd value (i.e. the extension) '.ext'
         # And [1:] deletes the heading '.' in the extension 'ext'
         extension = os.path.splitext(filename)[1][1:]
-        return extension in self.filter_extensions
+        return extension in self._filter_extensions
 
     def _is_ignored_file(self, filename):
         """
@@ -222,13 +170,111 @@ class Py3status:
         :param filename: The absolute, relative path or even basename of
             the file (i.e. without the path).
 
-        :return: `True` if `self.ignore_files` is not None, and contains the
-            given filename.
+        :return: `True` if `self.ignored_patterns` is not None, and one of the
+            patterns matches the given filename.
         """
-        if self.ignore_files is None:
+        if self._ignored_patterns is None:
             return False
+        for pattern in self._ignored_patterns:
+            if fnmatch(filename, pattern):
+                return True
+        return False
+
+
+class Py3status:
+
+    # Public attributes (i.e. config parameters)
+    button_next = 1
+    button_prev = 3
+    button_rand = 2
+    cache_list = False
+    command = 'feh --bg-scale {}'
+    filter_extensions = [
+        'jpg',
+        'png'
+    ]
+    first_image_path = None
+    format_string = 'Wallpaper {basename}'
+    ignored_patterns = []
+    recursive_search = False
+    search_dirs = [
+        '~/Pictures/'
+    ]
+
+    def __init__(self):
+        self._current_index = None
+        self._current_name = None
+        self._finder = None
+        self._wallpapers = None
+        self._error = None
+
+    def show(self):
+        """
+        Main method, returns the module content to py3status.
+
+        This is the method that will be called by py3status to compute the
+        output and show it on the i3bar.
+        """
+        if self._error:
+            format_string = 'Error! (code: {error_code})'
+            full_text = self.py3.safe_format(format_string, self._error)
         else:
-            return filename in self.ignore_files
+            data = {'full_name': self._current_name,
+                    'basename': os.path.basename(self._current_name)}
+            full_text = self.py3.safe_format(self.format_string, data)
+        return {
+            'full_text': full_text,
+            'cached_until': self.py3.CACHE_FOREVER
+        }
+
+    def on_click(self, event):
+        """
+        Callback function, called when a click event is received.
+        """
+        # {'y': 13,'x': 1737, 'button': 1, 'name':'example','instance':'first'}
+        if not self.cache_list:
+            self._wallpapers = self._finder.search()
+        index = self._current_index
+        if event['button'] == self.button_next:
+            index = self._finder.next(index)
+        elif event['button'] == self.button_prev:
+            index = self._finder.previous(index)
+        elif event['button'] == self.button_rand:
+            index = self._finder.random(index)
+        if index != self._current_index:
+            self._current_index = index
+            self._set_wallpaper(self._wallpapers[self._current_index])
+
+    def post_config_hook(self):
+        """
+        Initialization method (after config parameters have been set).
+        """
+        self._finder = WallpapersFinder(self.search_dirs,
+                                        self.recursive_search,
+                                        self.filter_extensions,
+                                        self.ignored_patterns)
+        self._wallpapers = self._finder.search()
+        if self.first_image_path is None:
+            # get random index
+            self._current_index = self._finder.random()
+        else:
+            # get index of given path
+            try:
+                self._current_index = \
+                    self._wallpapers.index(self.first_image_path)
+            except ValueError:
+                msg = 'Tried to force first image but path %s was not found ' \
+                      'in the list of wallpapers' % self.first_image_path
+                self.py3.log(msg, self.py3.LOG_WARNING)
+                self._current_index = 0
+        if self._current_index is not None:
+            self._set_wallpaper(self._wallpapers[self._current_index])
+        else:
+            msg = 'Could not find a suitable wallpaper'
+            self.py3.log(msg, self.py3.LOG_ERROR)
+            self._error = {'error_code': -2}
+
+    # Private Methods
 
     def _set_wallpaper(self, path):
         """
@@ -245,6 +291,7 @@ class Py3status:
         if path is None:
             msg = 'Cannot set wallpaper: path is not defined'
             self.py3.log(msg, self.py3.LOG_ERROR)
+            self._error = {'error_code': -1}
             return -1
 
         self._error = None
@@ -255,8 +302,8 @@ class Py3status:
             code = self.py3.command_run(cmd)
             self._current_name = path
         except self.py3.CommandError as e:
-            self._error = e
             code = e.error_code
+            self._error = {'error_code': code}
             msg = 'Error while setting the wallpaper! Return code: %d ; ' \
                   'stdout: %s ; stderr: %s' % (code, e.output, e.error)
             self.py3.log(msg, self.py3.LOG_ERROR)

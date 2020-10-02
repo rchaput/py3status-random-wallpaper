@@ -5,3 +5,6 @@
 build/
 dist/
 py3status_random_wallpaper.egg-info/
+
+# Virtualenv
+venv/
