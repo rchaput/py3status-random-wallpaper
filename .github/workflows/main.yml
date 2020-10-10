@@ -1,0 +1,77 @@
+# This workflow is used to automatically create releases when a tagged commit
+# is pushed (building the .whl file)
+name: Create Release
+
+# Controls when the action will run. Triggers the workflow on push or pull
+# request events but only for the master branch
+on:
+  push:
+    branches: [ master ]
+    tags:
+      # Push events must match `v*`, e.g., v1.0, v2, etc.
+      - 'v*'
+
+jobs:
+  # This job uses unittest to launch the pre-defined tests.
+  test:
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        python-version: [2.7, 3.5, 3.6, 3.7, 3.8, 3.9.0]
+    steps:
+      # Checks-out your repository under $GITHUB_WORKSPACE
+      - uses: actions/checkout@v2
+      # Set up Python for each version defined previously
+      - name: Set up Python ${{ matrix.python-version }}
+        uses: action/setup=python@v2
+        with:
+          python-version: ${{ matrix.python-version }}
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          if [ -f requirements.txt ]; then pip install -r requirements.txt; fi
+          pip install flake8 nose
+      # Show errors and warnings
+      - name: Lint with flake8
+        run: flake8 py3status_randwallpaper/ --count --exit-zero --show-source --statistics
+      # Run the unittest's Test Cases in the tests/ folder
+      - name: Test with nose
+        run: nosetests
+  # This job builds the Wheel file and uploads it in a new release on GitHub
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      # Checks-out your repository under $GITHUB_WORKSPACE
+      - uses: actions/checkout@v2
+      - name: Set up Python
+        uses: action/setup=python@v2
+        with:
+          python-version: 3.8
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          if [ -f requirements.txt ]; then pip install -r requirements.txt; fi
+          pip install py3status wheel
+      # Build a wheel file in the dist/ folder
+      - name: Build wheel
+        run: python setup.py bdist_wheel
+      - name: Create Release
+        id: create_release
+        uses: actions/create-release@v1
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          tag_name: ${{ github.ref }}
+          release_name: Release ${{ github.ref }}
+          body: New version ${{ github.ref }}
+          draft: false
+          prerelease: false
+      - name: Upload Release Asset
+        uses: actions/upload-release-asset@v1
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          upload_url: ${{ steps.create_release.outputs.upload_url }}
+          asset_path: ./dist/*.whl
+          asset_name: py3status_random_wallpaper.whl
+          asset_content_type: application/zip
