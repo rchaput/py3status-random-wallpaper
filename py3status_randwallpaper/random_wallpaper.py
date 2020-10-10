@@ -31,6 +31,12 @@ Configuration parameters:
         (default False)
     search_dirs: The list of directories to search for wallpapers.
         (default ['~/Pictures/'])
+    screen_count: The number of screens, i.e. the number of wallpapers to set.
+        (default 1)
+    same_all_screens: True to set the same wallpaper on all screens, False to
+        set different wallpapers for each screen. Has no effect if
+        `screen_count` is 1.
+        (default True)
 
 Button reference: (see the official py3status reference if unsure, this might be
     outdated)
@@ -41,8 +47,8 @@ Button reference: (see the official py3status reference if unsure, this might be
     5: scroll down
 
 Format placeholders:
-    {current_name} Full name (including path) of the current wallpaper
-    {current_basename} Basename (i.e. excluding path) of the current wallpaper
+    {full_name} Full name (including path) of the current(s) wallpaper(s)
+    {basename} Basename (i.e. excluding path) of the current(s) wallpaper(s)
 
 Requires:
     feh Used to set the background image (by default, unless you change the
@@ -77,23 +83,30 @@ class WallpapersFinder:
         self._ignored_patterns = ignored_patterns
         self.wallpapers = []
 
-    def previous(self, index):
+    def previous(self, index, number=1, same=True):
         if len(self.wallpapers) == 0:
             return None
-        return (index - 1) % len(self.wallpapers)
+        if same:
+            return [(index - 1) % len(self.wallpapers) for _ in range(number)]
+        else:
+            return [(index - (i+1)) % len(self.wallpapers) for i in range(number)]
 
-    def next(self, index):
+    def next(self, index, number=1, same=True):
         if len(self.wallpapers) == 0:
             return None
-        return (index + 1) % len(self.wallpapers)
+        if same:
+            return [(index + 1) % len(self.wallpapers) for _ in range(number)]
+        else:
+            return [(index + i+1) % len(self.wallpapers) for i in range(number)]
 
-    def random(self, index=None):
+    def random(self, index=None, number=1, same=True):
         if len(self.wallpapers) == 0:
             return None
-        new_index = index
-        while new_index == index:
+        if same:
             new_index = randint(0, len(self.wallpapers) - 1)
-        return new_index
+            return [new_index for _ in range(number)]
+        else:
+            return [randint(0, len(self.wallpapers) - 1) for _ in range(number)]
 
     def search(self):
         """
@@ -200,10 +213,11 @@ class Py3status:
     search_dirs = [
         '~/Pictures/'
     ]
+    screen_count = 1
+    same_all_screens = True
 
     def __init__(self):
-        self._current_index = None
-        self._current_name = None
+        self._current_indexes = None
         self._finder = None
         self._wallpapers = None
         self._error = None
@@ -219,8 +233,10 @@ class Py3status:
             format_string = 'Error! (code: {error_code})'
             full_text = self.py3.safe_format(format_string, self._error)
         else:
-            data = {'full_name': self._current_name,
-                    'basename': os.path.basename(self._current_name)}
+            full_names = [self._wallpapers[i] for i in self._current_indexes]
+            basenames = [os.path.basename(p) for p in full_names]
+            data = {'full_name': ' '.join(full_names),
+                    'basename': ' '.join(basenames)}
             full_text = self.py3.safe_format(self.format_string, data)
         return {
             'full_text': full_text,
@@ -234,16 +250,21 @@ class Py3status:
         # {'y': 13,'x': 1737, 'button': 1, 'name':'example','instance':'first'}
         if not self.cache_list:
             self._wallpapers = self._finder.search()
-        index = self._current_index
+        indexes = self._current_indexes
+        index = indexes[0] if indexes is not None else 0
         if event['button'] == self.button_next:
-            index = self._finder.next(index)
+            indexes = self._finder.next(index, self.screen_count,
+                                        self.same_all_screens)
         elif event['button'] == self.button_prev:
-            index = self._finder.previous(index)
+            indexes = self._finder.previous(index, self.screen_count,
+                                            self.same_all_screens)
         elif event['button'] == self.button_rand:
-            index = self._finder.random(index)
-        if index != self._current_index:
-            self._current_index = index
-            self._set_wallpaper(self._wallpapers[self._current_index])
+            indexes = self._finder.random(index, self.screen_count,
+                                          self.same_all_screens)
+        if indexes is not None and indexes != self._current_indexes:
+            self._current_indexes = indexes
+            paths = [self._wallpapers[i] for i in self._current_indexes]
+            self._set_wallpaper(paths)
 
     def post_config_hook(self):
         """
@@ -254,53 +275,48 @@ class Py3status:
                                         self.filter_extensions,
                                         self.ignored_patterns)
         self._wallpapers = self._finder.search()
-        if self.first_image_path is None:
-            # get random index
-            self._current_index = self._finder.random()
+        # get random index
+        self._current_indexes = self._finder.random(None, self.screen_count,
+                                                    self.same_all_screens)
+        if self._current_indexes is not None:
+            paths = [self._wallpapers[i] for i in self._current_indexes]
+            self._set_wallpaper(paths)
         else:
-            # get index of given path
-            try:
-                self._current_index = \
-                    self._wallpapers.index(self.first_image_path)
-            except ValueError:
-                msg = 'Tried to force first image but path %s was not found ' \
-                      'in the list of wallpapers' % self.first_image_path
-                self.py3.log(msg, self.py3.LOG_WARNING)
-                self._current_index = 0
-        if self._current_index is not None:
-            self._set_wallpaper(self._wallpapers[self._current_index])
-        else:
-            msg = 'Could not find a suitable wallpaper'
-            self.py3.log(msg, self.py3.LOG_ERROR)
+            self.py3.log('Could not find a suitable wallpaper',
+                         self.py3.LOG_ERROR)
             self._error = {'error_code': -2}
 
     # Private Methods
 
-    def _set_wallpaper(self, path):
+    def _set_wallpaper(self, paths):
         """
         Change the current wallpaper.
 
-        :param path: The full path to the desired wallpaper. Must not be None.
-        :type path: str
+        :param paths: List of paths to the desired wallpapers. Must not be None.
+        :type paths: list
 
         :return: The error code from the command that will be executed
             to set the wallpaper. Usually, if this code is `0`, it means
             that the command succeeded. Otherwise it indicates a problem.
         :rtype: int
         """
-        if path is None:
-            msg = 'Cannot set wallpaper: path is not defined'
-            self.py3.log(msg, self.py3.LOG_ERROR)
+        if paths is None:
+            self.py3.log('Cannot set wallpaper: `paths` is not defined',
+                         self.py3.LOG_ERROR)
             self._error = {'error_code': -1}
             return -1
+        if len(paths) == 0:
+            self.py3.log('Cannot set wallpaper: `paths` is empty',
+                         self.py3.LOG_ERROR)
+            self.error = {'error_code': -2}
 
+        str_paths = ' '.join(paths)
         self._error = None
-        msg = 'Trying to set wallpaper: %s' % path
-        self.py3.log(msg, self.py3.LOG_INFO)
-        cmd = self.command.format(path)
+        self.py3.log('Trying to set wallpaper(s): %s' % str_paths,
+                     self.py3.LOG_INFO)
+        cmd = self.command.format(str_paths)
         try:
             code = self.py3.command_run(cmd)
-            self._current_name = path
         except self.py3.CommandError as e:
             code = e.error_code
             self._error = {'error_code': code}
@@ -314,9 +330,11 @@ if __name__ == "__main__":
     """
     Run module in test mode.
     """
+    from os.path import abspath, dirname, join
+    from py3status.module_test import module_test
     config = {
         'recursive_search': True,
+        'search_dirs': [join(dirname(dirname(abspath(__file__))), 'tests/data')]
     }
-    from py3status.module_test import module_test
 
     module_test(Py3status, config=config)
