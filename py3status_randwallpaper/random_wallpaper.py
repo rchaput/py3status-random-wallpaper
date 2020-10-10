@@ -31,8 +31,9 @@ Configuration parameters:
         (default False)
     search_dirs: The list of directories to search for wallpapers.
         (default ['~/Pictures/'])
-    screen_count: The number of screens, i.e. the number of wallpapers to set.
-        (default 1)
+    screen_count: The number of screens, i.e. the number of wallpapers to set;
+        or 'auto' to automatically detect the number of screens.
+        (default 'auto')
     same_all_screens: True to set the same wallpaper on all screens, False to
         set different wallpapers for each screen. Has no effect if
         `screen_count` is 1.
@@ -61,12 +62,16 @@ License: Apache License 2.0 <https://www.apache.org/licenses/LICENSE-2.0.html>
 
 
 import os
+import subprocess
 from fnmatch import fnmatch
 from random import randint
 
 
 def detect_number_of_screens():
-    cmd = ['xrandr', '--query']
+    cmd = ['xrandr', '--listmonitors']
+    output = subprocess.check_output(cmd).decode('utf-8').splitlines()
+    output = [line for line in output if '+' in line]
+    return len(output)
 
 
 class WallpapersFinder:
@@ -213,7 +218,7 @@ class Py3status:
     search_dirs = [
         '~/Pictures/'
     ]
-    screen_count = 1
+    screen_count = 'auto'
     same_all_screens = True
 
     def __init__(self):
@@ -252,14 +257,16 @@ class Py3status:
             self._wallpapers = self._finder.search()
         indexes = self._current_indexes
         index = indexes[0] if indexes is not None else 0
+        nb_screens = detect_number_of_screens() if self.screen_count == 'auto' \
+            else self.screen_count
         if event['button'] == self.button_next:
-            indexes = self._finder.next(index, self.screen_count,
+            indexes = self._finder.next(index, nb_screens,
                                         self.same_all_screens)
         elif event['button'] == self.button_prev:
-            indexes = self._finder.previous(index, self.screen_count,
+            indexes = self._finder.previous(index, nb_screens,
                                             self.same_all_screens)
         elif event['button'] == self.button_rand:
-            indexes = self._finder.random(index, self.screen_count,
+            indexes = self._finder.random(index, nb_screens,
                                           self.same_all_screens)
         if indexes is not None and indexes != self._current_indexes:
             self._current_indexes = indexes
@@ -275,8 +282,10 @@ class Py3status:
                                         self.filter_extensions,
                                         self.ignored_patterns)
         self._wallpapers = self._finder.search()
+        nb_screens = detect_number_of_screens() if self.screen_count == 'auto' \
+            else self.screen_count
         # get random index
-        self._current_indexes = self._finder.random(None, self.screen_count,
+        self._current_indexes = self._finder.random(None, nb_screens,
                                                     self.same_all_screens)
         if self._current_indexes is not None:
             paths = [self._wallpapers[i] for i in self._current_indexes]
