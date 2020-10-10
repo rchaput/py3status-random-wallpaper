@@ -2,8 +2,8 @@
 """
 Allows you to change your background image (i.e. wallpaper).
 
-This module sets a random wallpaper each time you start py3status. Additionally,
-you can request a change by clicking on it.
+This module sets a random wallpaper each time you start py3status.
+Additionally, you can request a change by clicking on it.
 
 Configuration parameters:
     button_next: Select the button used to set the wallpaper as the next
@@ -15,8 +15,9 @@ Configuration parameters:
     cache_list: Set to True to cache the list of images. This will result
         in a faster and less power-consuming module, but you will need to
         reload the module to update the list of images. (default False)
-    command: The command that will be executed to update the wallpaper. You must
-        use '{}' as a placeholder for the path. (default 'feh --bg-scale {}')
+    command: The command that will be executed to update the wallpaper. You
+        must use '{}' as a placeholder for the path.
+        (default 'feh --bg-scale {}')
     filter_extensions: The list of extensions that will be allowed for the
         wallpapers. Set to None to authorize all extensions.
         (default ['jpg', 'png'])
@@ -39,8 +40,8 @@ Configuration parameters:
         `screen_count` is 1.
         (default True)
 
-Button reference: (see the official py3status reference if unsure, this might be
-    outdated)
+Button reference: (see the official py3status reference if unsure, this might
+    be outdated)
     1: left click
     2: middle click
     3: right click
@@ -301,7 +302,7 @@ class Py3status:
         """
         Change the current wallpaper.
 
-        :param paths: List of paths to the desired wallpapers. Must not be None.
+        :param paths: List of paths to the desired wallpapers.
         :type paths: list
 
         :return: The error code from the command that will be executed

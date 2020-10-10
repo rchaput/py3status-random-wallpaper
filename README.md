@@ -87,8 +87,8 @@ complete list should you need to tweak the parameters:
     (for example *mywallpaper.png*) and full name (for example 
     *~/Pictures/mywallpaper.png*), respectively.
   + Default: `'Wallpaper {basename}'`
-+ **ignore_files**
-  + List of filename to ignore when searching for wallpapers.
++ **ignored_patterns**
+  + List of Unix glob patterns to ignore when searching for wallpapers.
   + Default: `[]`
 + **recursive_search**
   + Set to True to search for images in subdirectories.
@@ -96,6 +96,14 @@ complete list should you need to tweak the parameters:
 + **search_dirs**
   + The list of directories to search for wallpapers.
   + Default: `['~/Pictures/']`
++ **screen_count**
+  + The number of screens, i.e. the number of wallpapers to set; or 'auto' 
+    to automatically detect the number of screens.
+  + (default 'auto')
++ **same_all_screens**
+  + True to set the same wallpaper on all screens, False to set different 
+    wallpapers for each screen. Has no effect if `screen_count` is 1.
+  + (default True)
   
 You can override these values in your py3status configuration file,
 which is usually `~/.config/i3/py3status.conf`.
