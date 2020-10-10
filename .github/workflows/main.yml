@@ -2,14 +2,16 @@
 # is pushed (building the .whl file)
 name: Create Release
 
-# Controls when the action will run. Triggers the workflow on push or pull
-# request events but only for the master branch
+# Sources:
+# - https://github.com/actions/starter-workflows/blob/dacfd0a22a5a696b74a41f0b49c98ff41ef88427/ci/python-package.yml
+# - https://github.com/actions/create-release
+# - https://github.com/actions/upload-release-asset
+
+# Triggers the workflow when a tag is created
 on:
-  push:
-    branches: [ master ]
-    tags:
-      # Push events must match `v*`, e.g., v1.0, v2, etc.
-      - 'v*'
+  create:
+    ref: 'v*'
+    ref_type: 'tag'
 
 jobs:
   # This job uses unittest to launch the pre-defined tests.
@@ -23,7 +25,7 @@ jobs:
       - uses: actions/checkout@v2
       # Set up Python for each version defined previously
       - name: Set up Python ${{ matrix.python-version }}
-        uses: action/setup=python@v2
+        uses: actions/setup-python@v2
         with:
           python-version: ${{ matrix.python-version }}
       - name: Install dependencies
@@ -44,7 +46,7 @@ jobs:
       # Checks-out your repository under $GITHUB_WORKSPACE
       - uses: actions/checkout@v2
       - name: Set up Python
-        uses: action/setup=python@v2
+        uses: actions/setup-python@v2
         with:
           python-version: 3.8
       - name: Install dependencies
